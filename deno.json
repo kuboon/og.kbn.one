@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "@hono/hono/jsx"
   },
   "imports": {
     "@hono/hono": "jsr:@hono/hono@^4.6.13",

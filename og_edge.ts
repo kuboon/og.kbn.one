@@ -6,11 +6,12 @@ import type { SatoriOptions } from "https://esm.sh/satori@0.10.3";
 import satori, { init as initSatori } from "https://esm.sh/satori@0.10.3/wasm";
 import { initStreaming, type Yoga } from "https://esm.sh/yoga-wasm-web@0.3.3";
 
+import { initWasm, Resvg } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
 import {
-  initWasm,
-  Resvg,
-} from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
-import { EmojiType, getIconCode, loadEmoji } from "https://deno.land/x/og_edge@0.0.6/emoji.ts";
+  EmojiType,
+  getIconCode,
+  loadEmoji,
+} from "https://deno.land/x/og_edge@0.0.6/emoji.ts";
 
 import { encodeBase64 } from "@std/encoding/base64";
 
@@ -113,15 +114,15 @@ export async function loadGoogleFont(fonts: string | string[], text?: string) {
   const font = Array.isArray(fonts) ? fonts.at(-1) : fonts;
   if (!font || !text) return;
 
-  let url = `https://fonts.googleapis.com/css2?family=${font}`
-  if(text) url += `&text=${encodeURIComponent(text)}`
+  let url = `https://fonts.googleapis.com/css2?family=${font}`;
+  if (text) url += `&text=${encodeURIComponent(text)}`;
 
   const css = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; de-at) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1",
-      },
-    }).then(x=>x.text())
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; de-at) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1",
+    },
+  }).then((x) => x.text());
 
   const resource = css.match(
     /src: url\((.+)\) format\('(opentype|truetype)'\)/,
@@ -129,7 +130,7 @@ export async function loadGoogleFont(fonts: string | string[], text?: string) {
   if (!resource) throw new Error("Failed to load font");
 
   const res = await fetch(resource[1]);
-  if(!res.ok) throw new Error("Failed to load font");
+  if (!res.ok) throw new Error("Failed to load font");
   return res.arrayBuffer();
 }
 
@@ -143,7 +144,9 @@ const loadDynamicAsset = ({ emoji }: { emoji?: EmojiType }) => {
   ): Promise<Asset | undefined> => {
     if (code === "emoji") {
       // It's an emoji, load the image.
-      const b64 = await loadEmoji(getIconCode(text), emoji).then(x=>x.arrayBuffer()).then(encodeBase64)
+      const b64 = await loadEmoji(getIconCode(text), emoji).then((x) =>
+        x.arrayBuffer()
+      ).then(encodeBase64);
       return (`data:image/svg+xml;base64,${b64}`);
     }
 
@@ -191,7 +194,7 @@ export class ImageResponse extends Response {
     const result = new ReadableStream({
       async start(controller) {
         try {
-          const fallbackFont = loadGoogleFont("Noto+Sans")
+          const fallbackFont = loadGoogleFont("Noto+Sans");
           await initializedYoga;
           await initializedResvg;
           const fontData = await fallbackFont;
@@ -224,7 +227,7 @@ export class ImageResponse extends Response {
           controller.enqueue(resvgJS.render().asPng());
           controller.close();
         } catch (e) {
-          console.error('error in og-edge', e);
+          console.error("error in og-edge", e);
           controller.error(e);
         }
       },
