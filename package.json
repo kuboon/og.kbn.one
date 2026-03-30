@@ -1,0 +1,22 @@
+{
+  "name": "typistan-ogp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.6.13",
+    "react": "^18.3.1",
+    "satori": "^0.11.2",
+    "wasm-image-optimization": "^1.0.12",
+    "yoga-wasm-web": "^0.3.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241112.0",
+    "@types/react": "^18.3.3",
+    "typescript": "^5.5.2",
+    "wrangler": "^3.60.3"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": [
+      "@cloudflare/workers-types/2023-07-01",
+      "hono/cloudflare-workers",
+      "hono/jsx"
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["src"]
+}
