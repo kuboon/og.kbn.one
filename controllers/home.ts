@@ -60,8 +60,8 @@ export const homeAction = {
     const body = html`
       <h1>og.kbn.one</h1>
       <p>テンプレ駆動の og:image 生成サービス。テンプレ（SVG）は各プロジェクトが静的ファイルとして持ち、
-      このサーバはクエリの値を埋めて PNG を描画します。サーバを持たないクライアントだけのゲームでも、
-      静的ホスティングにテンプレを 1 ファイル置けば使えます。</p>
+            このサーバはクエリの値を埋めて PNG を描画します。サーバを持たないクライアントだけのゲームでも、
+            静的ホスティングにテンプレを 1 ファイル置けば使えます。</p>
 
       <h2>仕組み</h2>
       <ol>
@@ -91,8 +91,8 @@ export const homeAction = {
       <p>ゲーム側の実装例:</p>
       <pre><code>${CLIENT_EXAMPLE}</code></pre>
       <p>操作ログのような長い値も、通常のクエリ値として 1 回だけエンコードすれば済みます。
-      <code>/share</code> は受け取った値をデコードし、<code>url</code> パターンに埋めるときに 1 回エンコードし直すので、
-      ゲームが <code>URLSearchParams</code> で読めば元の値がそのまま戻ります。</p>
+            <code>/share</code> は受け取った値をデコードし、<code>url</code> パターンに埋めるときに 1 回エンコードし直すので、
+            ゲームが <code>URLSearchParams</code> で読めば元の値がそのまま戻ります。</p>
 
       <h2>テンプレの形式</h2>
       <p>先頭が <code>&lt;</code> なら SVG、<code>{</code> なら JSON として読みます。どちらも最終的に同じ構造に正規化されます。</p>
@@ -141,21 +141,21 @@ export const homeAction = {
 
       <h2>縦横比の出し分け</h2>
       <p><code>/share</code> はクローラの User-Agent から目標の縦横比を決め、テンプレの画像のうち
-      <strong>目標を超えない範囲で最も近いもの</strong>を選びます（目標以下が無ければ最も近いもの）。
-      選んだ画像の比率を <code>ar</code> として <code>/img</code> に渡すので、<code>/img</code> 自体は User-Agent を見ません。</p>
+            <strong>目標を超えない範囲で最も近いもの</strong>を選びます（目標以下が無ければ最も近いもの）。
+            選んだ画像の比率を <code>ar</code> として <code>/img</code> に渡すので、<code>/img</code> 自体は User-Agent を見ません。</p>
       <table>
-      <tr><th>クローラ</th><th>目標比率</th><th>備考</th></tr>
-      ${UA_RATIOS.map((u) =>
-        html`
-          <tr>
-            <td>${u.name}</td>
-            <td>${formatRatio(u.ratio)}</td>
-            <td>${u.note}</td>
-          </tr>
-        `
-      )}
-      <tr><td>その他</td><td>1.91</td><td>OG 標準の 1200×630</td></tr>
-      </table>
+            <tr><th>クローラ</th><th>目標比率</th><th>備考</th></tr>
+            ${UA_RATIOS.map((u) =>
+              html`
+                <tr>
+                  <td>${u.name}</td>
+                  <td>${formatRatio(u.ratio)}</td>
+                  <td>${u.note}</td>
+                </tr>
+              `
+            )}
+            <tr><td>その他</td><td>1.91</td><td>OG 標準の 1200×630</td></tr>
+            </table>
       <p>画像が 1 枚しか無いテンプレは常にそれが使われます。<code>twitter:card</code> は選ばれた画像が正方形に近ければ <code>summary</code>、それ以外は <code>summary_large_image</code> になります。</p>
 
       <h2>キャッシュと更新</h2>
@@ -163,6 +163,7 @@ export const homeAction = {
         <li>テンプレは取得から 1 時間キャッシュします（Worker のメモリと Cloudflare KV）。</li>
         <li>1 時間を過ぎると <code>If-None-Match</code> / <code>If-Modified-Since</code> 付きで再検証します。再検証はバックグラウンドで行い、そのリクエストには手元のテンプレで応答します。304 なら本文は流れません。静的ホスティングなら ETag は自動で付きます。</li>
         <li>再検証に失敗したときは古いテンプレを使い続けます。</li>
+        <li>すぐに反映したいときは <a href="/preview">/preview</a> の「キャッシュを消して再取得」で、そのテンプレのキャッシュを捨てて取り直せます。</li>
         <li>描画済み PNG はエッジキャッシュに置き、<code>Cache-Control: public, max-age=3600</code> を返します。</li>
         <li>テンプレは 1MB まで。</li>
       </ul>

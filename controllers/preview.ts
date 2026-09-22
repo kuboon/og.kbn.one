@@ -23,11 +23,55 @@ import {
 import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
 
+/**
+ * POST /preview/purge（フォーム: url=<シェア URL>）
+ *
+ * テンプレのキャッシュ（メモリと KV）を捨てて /preview に戻る。
+ * 戻り先の /preview は条件無しでテンプレを取り直す。
+ */
+export const previewPurgeAction = {
+  async handler(context) {
+    const form = await context.request.formData();
+    const pasted = String(form.get("url") ?? "");
+    const back = new URL("/preview", context.url.origin);
+    if (pasted) back.searchParams.set("url", pasted);
+    let tmpl: string | null = null;
+    try {
+      tmpl = parseShareParams(new URL(pasted).searchParams)?.tmpl ?? null;
+    } catch {
+      // URL でなければ purge せずに戻す
+    }
+    if (tmpl) {
+      try {
+        await getTemplateStore().purge(tmpl);
+        back.searchParams.set("purged", "1");
+      } catch (e) {
+        if (!(e instanceof Error)) return errorResponse(e);
+        back.searchParams.set("purge_error", e.message);
+      }
+    }
+    return new Response(null, {
+      status: 303,
+      headers: { location: back.href },
+    });
+  },
+} satisfies Action<typeof routes.previewPurge>;
+
 export const previewAction = {
   async handler(context) {
     const own = context.url.searchParams;
     let search = own;
     const pasted = own.get("url");
+    const notice = own.get("purged")
+      ? html`
+        <p
+          class="ok">テンプレのキャッシュを消して取り直しました。描画済み PNG はテンプレが変わっていれば別 URL になります。クローラや CDN 側に残った古い画像は消せません。</p>
+      `
+      : own.get("purge_error")
+      ? html`<p class="warn">キャッシュを消せませんでした: ${
+        own.get("purge_error") ?? ""
+      }</p>`
+      : html``;
     if (pasted) {
       try {
         search = new URL(pasted).searchParams;
@@ -40,7 +84,7 @@ export const previewAction = {
     }
     const params = parseShareParams(search);
     if (!params) {
-      return layout("preview", form(pasted ?? "", html``));
+      return layout("preview", form(pasted ?? "", notice));
     }
     const shareUrl = new URL("/share", context.url.origin);
     for (const [k, v] of search) shareUrl.searchParams.append(k, v);
@@ -79,7 +123,7 @@ export const previewAction = {
       });
 
       const body = html`
-        ${form(pasted ?? shareUrl.href, html``)}
+        ${form(pasted ?? shareUrl.href, notice)}
         ${fontLinks}
         <h2>テンプレ</h2>
         <table>
@@ -210,10 +254,17 @@ export const previewAction = {
 function form(value: string, note: SafeHtml): SafeHtml {
   return html`
     <h1>preview</h1>
-    <form method="get" action="/preview">
+    <form method="get" action="/preview" id="preview-form">
       <p><label>シェア URL<br><input type="url" name="url" value="${value}" placeholder="https://og.kbn.one/share?tmpl=example.kbn.one/og.svg&score=10" required></label></p>
-      <p><button type="submit">表示</button></p>
     </form>
+    <form method="post" action="/preview/purge" id="purge-form">
+      <input type="hidden" name="url" value="${value}">
+    </form>
+    <p>
+      <button type="submit" form="preview-form">表示</button>
+      <button type="submit" form="purge-form"
+        ${value ? "" : html.raw`disabled`}>キャッシュを消して再取得</button>
+    </p>
     ${note}
   `;
 }

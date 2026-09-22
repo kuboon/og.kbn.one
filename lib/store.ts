@@ -96,6 +96,20 @@ export class TemplateStore {
     return await revalidation;
   }
 
+  /**
+   * キャッシュを捨てる。次の {@link get} は条件無しで取り直す。
+   * 描画済み PNG はテンプレのバージョン（ETag / 本文ハッシュ）をキーに
+   * 持つので、テンプレが変わっていれば自然に別キーになる。
+   */
+  async purge(ref: string): Promise<void> {
+    const url = tmplRefToUrl(ref);
+    const key = url.host + url.pathname + url.search;
+    this.#memory.delete(key);
+    await this.#kv?.delete(key).catch((e) =>
+      console.error("kv delete failed", key, e)
+    );
+  }
+
   #dedupe(
     key: string,
     run: () => Promise<CachedTemplate>,
