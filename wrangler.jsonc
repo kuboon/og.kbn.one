@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "og-kbn-one",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-01",
+  "routes": [{ "pattern": "og.kbn.one", "custom_domain": true }],
+  "kv_namespaces": [
+    { "binding": "TEMPLATES", "id": "ccb57f12e32b4309b5351600dd2a5f76" }
+  ],
+  "observability": { "enabled": true }
+}
