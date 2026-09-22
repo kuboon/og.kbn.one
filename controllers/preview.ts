@@ -20,6 +20,7 @@ import {
   pickImage,
   twitterCard,
 } from "../lib/share.ts";
+import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
 
 export const previewAction = {
@@ -45,8 +46,8 @@ export const previewAction = {
     for (const [k, v] of search) shareUrl.searchParams.append(k, v);
 
     try {
-      const store = await getTemplateStore();
-      const cached = await store.get(params.tmpl);
+      const { waitUntil } = getRequestScope(context.request);
+      const cached = await getTemplateStore().get(params.tmpl, { waitUntil });
       const { template } = cached;
       const vars = imageVars(template, params.vars);
       const og = buildOgFields(template, params.vars);

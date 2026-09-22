@@ -6,10 +6,12 @@
  * マッチし、`example.com` 自身にはマッチしない。
  */
 
+import { getEnvVar } from "./config.ts";
+
 export const DEFAULT_ALLOWED_HOSTS = ["*.kbn.one", "kuboon.github.io"];
 
 export function allowedHostPatterns(): string[] {
-  const env = Deno.env.get("ALLOWED_HOSTS");
+  const env = getEnvVar("ALLOWED_HOSTS");
   if (!env) return DEFAULT_ALLOWED_HOSTS;
   return env.split(",").map((s) => s.trim()).filter(Boolean);
 }

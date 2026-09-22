@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { TemplateFetchError, TemplateStore } from "./store.ts";
+import { MemoryTemplateKv } from "./kv.ts";
+import { type StoredMeta, TemplateFetchError, TemplateStore } from "./store.ts";
 
 const SVG = `<svg width="1200" height="630"><text>{{score}}</text></svg>`;
 
@@ -42,7 +43,7 @@ Deno.test("TemplateStore caches, revalidates after TTL, and picks up changes", a
   Deno.env.set("ALLOWED_HOSTS", "*.kbn.one");
   const origin = fakeOrigin();
   let now = 1_000_000;
-  const kv = await Deno.openKv(":memory:");
+  const kv = new MemoryTemplateKv<StoredMeta>();
   const store = new TemplateStore({
     kv,
     fetch: origin.fetchFn,
@@ -85,8 +86,6 @@ Deno.test("TemplateStore caches, revalidates after TTL, and picks up changes", a
   const d = await store2.get("g.kbn.one/og.svg");
   assertEquals(d.etag, `"v2"`);
   assertEquals(origin.log.length, 3, "restored from KV without fetching");
-
-  kv.close();
   Deno.env.delete("ALLOWED_HOSTS");
 });
 
@@ -126,25 +125,40 @@ Deno.test("TemplateStore errors", async () => {
   Deno.env.delete("ALLOWED_HOSTS");
 });
 
-Deno.test("TemplateStore stores large bodies in KV chunks", async () => {
+Deno.test("TemplateStore serves stale and revalidates in background with waitUntil", async () => {
   Deno.env.set("ALLOWED_HOSTS", "*.kbn.one");
-  const big = `<svg width="1200" height="630"><path d="${
-    "M0 0 ".repeat(40_000)
-  }"/></svg>`;
-  assert(big.length > 150_000);
-  const fetchFn = (() =>
-    Promise.resolve(
-      new Response(big, { headers: { etag: `"big"` } }),
-    )) as typeof fetch;
-  const kv = await Deno.openKv(":memory:");
-  const s1 = new TemplateStore({ kv, fetch: fetchFn });
-  await s1.get("g.kbn.one/big.svg");
-  const s2 = new TemplateStore({
-    kv,
-    fetch: (() => Promise.reject(new Error("no"))) as typeof fetch,
+  const origin = fakeOrigin();
+  let now = 0;
+  const store = new TemplateStore({
+    fetch: origin.fetchFn,
+    now: () => now,
+    ttlMs: 1000,
   });
-  const t = await s2.get("g.kbn.one/big.svg");
-  assertEquals(t.text.length, big.length);
-  kv.close();
+  await store.get("g.kbn.one/og.svg");
+  origin.update(
+    `<svg width="800" height="800"><text>{{score}}</text></svg>`,
+    `"v2"`,
+  );
+  now += 2000;
+  const background: Promise<unknown>[] = [];
+  const stale = await store.get("g.kbn.one/og.svg", {
+    waitUntil: (p) => background.push(p),
+  });
+  assertEquals(
+    stale.etag,
+    `"v1"`,
+    "responds with the stale template immediately",
+  );
+  assertEquals(background.length, 1);
+  await Promise.all(background);
+  const fresh = await store.get("g.kbn.one/og.svg", {
+    waitUntil: (p) => background.push(p),
+  });
+  assertEquals(
+    fresh.etag,
+    `"v2"`,
+    "background revalidation picked up the new version",
+  );
+  assertEquals(background.length, 1, "fresh entry does not revalidate again");
   Deno.env.delete("ALLOWED_HOSTS");
 });

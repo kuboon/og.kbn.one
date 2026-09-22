@@ -6,7 +6,7 @@
  *   data URI にインライン化する。
  * - フォントは Google Fonts から、SVG 内の文字だけのサブセットを取得する。
  */
-import { initWasm, Resvg } from "@resvg/resvg-wasm";
+import { type InitInput, initWasm, Resvg } from "@resvg/resvg-wasm";
 import { decodeXmlEntities, PLACEHOLDER_RE } from "./template.ts";
 
 const FONT_UA =
@@ -208,13 +208,37 @@ function trimCache(map: Map<string, unknown>, max: number) {
   }
 }
 
+let wasmInput: InitInput | Promise<InitInput> | undefined;
 let wasmReady: Promise<void> | undefined;
+
+/**
+ * resvg の wasm を渡す。Workers ではバンドラが `import` した `WebAssembly.Module`、
+ * Deno では未設定のまま npm キャッシュのファイルを読む。
+ */
+export function setResvgWasm(input: InitInput | Promise<InitInput>): void {
+  wasmInput = input;
+}
+
 function ensureWasm(): Promise<void> {
   if (!wasmReady) {
-    const url = new URL(import.meta.resolve("@resvg/resvg-wasm/index_bg.wasm"));
-    wasmReady = Deno.readFile(url).then((bytes) => initWasm(bytes));
+    const input = wasmInput ?? readWasmWithDeno();
+    wasmReady = Promise.resolve(input).then((i) => initWasm(i));
   }
   return wasmReady;
+}
+
+function readWasmWithDeno(): Promise<Uint8Array> {
+  const deno = (globalThis as {
+    Deno?: { readFile(url: URL): Promise<Uint8Array> };
+  }).Deno;
+  if (!deno) {
+    return Promise.reject(
+      new Error("resvg wasm is not configured: call setResvgWasm()"),
+    );
+  }
+  return deno.readFile(
+    new URL(import.meta.resolve("@resvg/resvg-wasm/index_bg.wasm")),
+  );
 }
 
 export interface RenderOptions {

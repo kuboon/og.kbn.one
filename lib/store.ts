@@ -1,24 +1,22 @@
 /**
  * テンプレの取得とキャッシュ。
  *
- * - メモリ（アイソレート内）と Deno KV の二層。
+ * - メモリ（アイソレート内）と KV の二層。
  * - 取得から 1 時間は再検証しない。超えたら `If-None-Match` /
  *   `If-Modified-Since` 付きの条件付き GET で再検証し、304 なら取得時刻だけ更新。
+ * - `waitUntil` が使える環境（Cloudflare Workers）では、期限切れでも手元の
+ *   テンプレで即応答し、再検証はバックグラウンドで行う。
  * - 再検証や再取得に失敗した場合は、手元にある古いテンプレを使い続ける。
- * - KV の値は 64KiB 上限なので本文はチャンクに分けて保存する。
  */
-import { tmplRefToUrl } from "./allowlist.ts";
+import { isAllowedHost, tmplRefToUrl } from "./allowlist.ts";
+import { type TemplateKv } from "./kv.ts";
 import { parseTemplate, type Template } from "./template.ts";
 
 export const TEMPLATE_TTL_MS = 60 * 60 * 1000;
 export const MAX_TEMPLATE_BYTES = 1024 * 1024;
-const CHUNK_BYTES = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
-interface StoredMeta {
-  ver: string;
-  chunks: number;
-  size: number;
+export interface StoredMeta {
   etag?: string;
   lastModified?: string;
   fetchedAt: number;
@@ -44,46 +42,69 @@ export class TemplateFetchError extends Error {
 }
 
 export interface TemplateStoreOptions {
-  kv?: Deno.Kv | null;
+  kv?: TemplateKv<StoredMeta> | null;
   fetch?: typeof fetch;
   now?: () => number;
   ttlMs?: number;
 }
 
+export interface GetOptions {
+  /** 期限切れ時の再検証をバックグラウンドに回す（Workers の `ctx.waitUntil`）。 */
+  waitUntil?: (promise: Promise<unknown>) => void;
+}
+
 export class TemplateStore {
   #memory = new Map<string, CachedTemplate>();
   #inflight = new Map<string, Promise<CachedTemplate>>();
-  #kv: Deno.Kv | null;
+  #kv: TemplateKv<StoredMeta> | null;
   #fetch: typeof fetch;
   #now: () => number;
   #ttl: number;
 
   constructor(opts: TemplateStoreOptions = {}) {
     this.#kv = opts.kv ?? null;
-    this.#fetch = opts.fetch ?? fetch;
+    // メソッド呼び出しになると `this` が付いて Workers で Illegal invocation になるので包む。
+    const f = opts.fetch ?? fetch;
+    this.#fetch = (input, init) => f(input, init);
     this.#now = opts.now ?? Date.now;
     this.#ttl = opts.ttlMs ?? TEMPLATE_TTL_MS;
   }
 
   /** `tmpl` クエリ値からテンプレを取得する。ホワイトリスト検査を含む。 */
-  async get(ref: string): Promise<CachedTemplate> {
+  async get(ref: string, opts: GetOptions = {}): Promise<CachedTemplate> {
     const url = tmplRefToUrl(ref);
     const key = url.host + url.pathname + url.search;
-    const running = this.#inflight.get(key);
-    if (running) return await running;
-    const p = this.#resolve(key, url).finally(() => this.#inflight.delete(key));
-    this.#inflight.set(key, p);
-    return await p;
-  }
 
-  async #resolve(key: string, url: URL): Promise<CachedTemplate> {
     let cached = this.#memory.get(key) ?? null;
     if (!cached) {
       cached = await this.#readKv(key, url);
       if (cached) this.#memory.set(key, cached);
     }
     if (cached && this.#now() - cached.fetchedAt < this.#ttl) return cached;
-    return await this.#revalidate(key, url, cached);
+
+    const revalidation = this.#dedupe(
+      key,
+      () => this.#revalidate(key, url, cached),
+    );
+    if (cached && opts.waitUntil) {
+      // 古いテンプレで即応答し、更新は裏で行う。
+      opts.waitUntil(
+        revalidation.catch((e) => console.error("revalidate failed", key, e)),
+      );
+      return cached;
+    }
+    return await revalidation;
+  }
+
+  #dedupe(
+    key: string,
+    run: () => Promise<CachedTemplate>,
+  ): Promise<CachedTemplate> {
+    const running = this.#inflight.get(key);
+    if (running) return running;
+    const p = run().finally(() => this.#inflight.delete(key));
+    this.#inflight.set(key, p);
+    return p;
   }
 
   async #revalidate(
@@ -127,15 +148,12 @@ export class TemplateStore {
     }
     // リダイレクト先もホワイトリスト内であること。
     const finalHost = new URL(res.url || url).hostname;
-    if (res.url && finalHost !== url.hostname) {
-      const { isAllowedHost } = await import("./allowlist.ts");
-      if (!isAllowedHost(finalHost)) {
-        await res.body?.cancel();
-        throw new TemplateFetchError(
-          `template redirected to a host that is not allowed: ${finalHost}`,
-          403,
-        );
-      }
+    if (res.url && finalHost !== url.hostname && !isAllowedHost(finalHost)) {
+      await res.body?.cancel();
+      throw new TemplateFetchError(
+        `template redirected to a host that is not allowed: ${finalHost}`,
+        403,
+      );
     }
     const bytes = await readLimited(res, MAX_TEMPLATE_BYTES);
     if (!bytes) {
@@ -168,9 +186,12 @@ export class TemplateStore {
       version: await versionOf(etag, bytes),
     };
     this.#memory.set(key, entry);
-    await this.#writeKv(key, entry, bytes).catch((e) =>
-      console.error("kv write failed", key, e)
-    );
+    await this.#kv?.put(key, bytes, {
+      etag,
+      lastModified,
+      fetchedAt: entry.fetchedAt,
+    })
+      .catch((e) => console.error("kv write failed", key, e));
     return entry;
   }
 
@@ -178,11 +199,10 @@ export class TemplateStore {
     const touched = { ...entry, fetchedAt: this.#now() };
     this.#memory.set(key, touched);
     if (this.#kv) {
-      const metaKey = ["tmpl", key];
-      const cur = await this.#kv.get<StoredMeta>(metaKey);
-      if (cur.value) {
-        await this.#kv.set(metaKey, {
-          ...cur.value,
+      const cur = await this.#kv.get(key).catch(() => null);
+      if (cur) {
+        await this.#kv.put(key, cur.value, {
+          ...cur.metadata,
           fetchedAt: touched.fetchedAt,
         })
           .catch((e) => console.error("kv touch failed", key, e));
@@ -194,69 +214,22 @@ export class TemplateStore {
   async #readKv(key: string, url: URL): Promise<CachedTemplate | null> {
     if (!this.#kv) return null;
     try {
-      const meta = (await this.#kv.get<StoredMeta>(["tmpl", key])).value;
-      if (!meta) return null;
-      const parts: Uint8Array[] = [];
-      for (let i = 0; i < meta.chunks; i += 10) {
-        const keys = [];
-        for (let j = i; j < Math.min(i + 10, meta.chunks); j++) {
-          keys.push(["tmplbody", key, meta.ver, j]);
-        }
-        const got = await this.#kv.getMany<Uint8Array[]>(keys);
-        for (const g of got) {
-          if (!g.value) return null; // 欠損: 取り直す
-          parts.push(g.value);
-        }
-      }
-      const bytes = concat(parts, meta.size);
-      const text = new TextDecoder().decode(bytes);
+      const entry = await this.#kv.get(key);
+      if (!entry) return null;
+      const text = new TextDecoder().decode(entry.value);
       return {
         key,
         url: url.href,
         template: parseTemplate(text),
         text,
-        etag: meta.etag,
-        lastModified: meta.lastModified,
-        fetchedAt: meta.fetchedAt,
-        version: await versionOf(meta.etag, bytes),
+        etag: entry.metadata.etag,
+        lastModified: entry.metadata.lastModified,
+        fetchedAt: entry.metadata.fetchedAt,
+        version: await versionOf(entry.metadata.etag, entry.value),
       };
     } catch (e) {
       console.error("kv read failed", key, e);
       return null;
-    }
-  }
-
-  async #writeKv(key: string, entry: CachedTemplate, bytes: Uint8Array) {
-    if (!this.#kv) return;
-    const ver = crypto.randomUUID();
-    const chunks = Math.ceil(bytes.byteLength / CHUNK_BYTES);
-    // 本文チャンクを先に書き、最後にメタを差し替える。
-    for (let i = 0; i < chunks; i += 10) {
-      const op = this.#kv.atomic();
-      for (let j = i; j < Math.min(i + 10, chunks); j++) {
-        op.set(
-          ["tmplbody", key, ver, j],
-          bytes.subarray(j * CHUNK_BYTES, (j + 1) * CHUNK_BYTES),
-        );
-      }
-      const r = await op.commit();
-      if (!r.ok) throw new Error("kv chunk commit failed");
-    }
-    const metaKey = ["tmpl", key];
-    const prev = (await this.#kv.get<StoredMeta>(metaKey)).value;
-    const meta: StoredMeta = {
-      ver,
-      chunks,
-      size: bytes.byteLength,
-      etag: entry.etag,
-      lastModified: entry.lastModified,
-      fetchedAt: entry.fetchedAt,
-    };
-    await this.#kv.set(metaKey, meta);
-    if (prev && prev.ver !== ver) {
-      for (let j = 0; j < prev.chunks; j++) {
-        await this.#kv.delete(["tmplbody", key, prev.ver, j]);
-      }
     }
   }
 }
@@ -270,9 +243,9 @@ async function readLimited(
     await res.body?.cancel();
     return null;
   }
+  if (!res.body) return new Uint8Array();
   const parts: Uint8Array[] = [];
   let total = 0;
-  if (!res.body) return new Uint8Array();
   for await (const chunk of res.body) {
     total += chunk.byteLength;
     if (total > limit) {
@@ -281,11 +254,7 @@ async function readLimited(
     }
     parts.push(chunk);
   }
-  return concat(parts, total);
-}
-
-function concat(parts: Uint8Array[], size: number): Uint8Array {
-  const out = new Uint8Array(size);
+  const out = new Uint8Array(total);
   let off = 0;
   for (const p of parts) {
     out.set(p, off);
@@ -308,17 +277,19 @@ async function versionOf(
 
 let defaultStore: TemplateStore | undefined;
 
-/** 本番用のストア。Deno Deploy 上では Deno KV、ローカルではメモリ KV を使う。 */
-export async function getTemplateStore(): Promise<TemplateStore> {
-  if (defaultStore) return defaultStore;
-  const kvPath = Deno.env.get("KV_PATH") ??
-    (Deno.env.get("DENO_DEPLOYMENT_ID") ? undefined : ":memory:");
-  let kv: Deno.Kv | null = null;
-  try {
-    kv = await Deno.openKv(kvPath);
-  } catch (e) {
-    console.error("Deno KV unavailable, using memory only:", e);
-  }
-  defaultStore = new TemplateStore({ kv });
+/**
+ * 本番用ストアを設定する。Workers エントリが KV バインディングを渡す。
+ * 一度設定したら以降の呼び出しは無視される（アイソレート内で共有）。
+ */
+export function configureTemplateStore(
+  opts: TemplateStoreOptions,
+): TemplateStore {
+  defaultStore ??= new TemplateStore(opts);
+  return defaultStore;
+}
+
+/** 設定済みのストア。未設定ならメモリのみ（ローカル開発用）。 */
+export function getTemplateStore(): TemplateStore {
+  defaultStore ??= new TemplateStore();
   return defaultStore;
 }

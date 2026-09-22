@@ -19,6 +19,7 @@ import {
   pickImage,
   twitterCard,
 } from "../lib/share.ts";
+import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
 
 export const shareAction = {
@@ -26,8 +27,10 @@ export const shareAction = {
     const params = parseShareParams(context.url.searchParams);
     if (!params) return badRequest("tmpl is required");
     try {
-      const store = await getTemplateStore();
-      const { template } = await store.get(params.tmpl);
+      const { waitUntil } = getRequestScope(context.request);
+      const { template } = await getTemplateStore().get(params.tmpl, {
+        waitUntil,
+      });
       const ratio = parseRatio(params.ratio) ??
         ratioForUserAgent(context.headers.get("user-agent"));
       const image = pickImage(template, ratio);

@@ -160,10 +160,10 @@ export const homeAction = {
 
       <h2>キャッシュと更新</h2>
       <ul>
-        <li>テンプレは取得から 1 時間キャッシュします（メモリと Deno KV）。</li>
-        <li>1 時間を過ぎると <code>If-None-Match</code> / <code>If-Modified-Since</code> 付きで再検証します。304 なら本文は流れません。静的ホスティングなら ETag は自動で付きます。</li>
+        <li>テンプレは取得から 1 時間キャッシュします（Worker のメモリと Cloudflare KV）。</li>
+        <li>1 時間を過ぎると <code>If-None-Match</code> / <code>If-Modified-Since</code> 付きで再検証します。再検証はバックグラウンドで行い、そのリクエストには手元のテンプレで応答します。304 なら本文は流れません。静的ホスティングなら ETag は自動で付きます。</li>
         <li>再検証に失敗したときは古いテンプレを使い続けます。</li>
-        <li>描画済み PNG は URL 単位で <code>Cache-Control: public, max-age=3600</code> を返します。</li>
+        <li>描画済み PNG はエッジキャッシュに置き、<code>Cache-Control: public, max-age=3600</code> を返します。</li>
         <li>テンプレは 1MB まで。</li>
       </ul>
 
