@@ -198,3 +198,43 @@ Deno.test(
     assertStringIncludes(await empty.text(), "<form");
   }),
 );
+
+Deno.test(
+  "POST /preview/purge drops the template cache and redirects back",
+  withOrigin(async (base) => {
+    const share = `http://og.test/share?tmpl=${base}/og.svg&score=1`;
+    const first = await router.fetch(
+      new Request(`http://og.test/preview?url=${encodeURIComponent(share)}`),
+    );
+    assertEquals(first.status, 200);
+    const html1 = await first.text();
+    assertStringIncludes(html1, `action="/preview/purge"`);
+    const fetchedAt = html1.match(/<th>取得時刻<\/th>\s*<td>([^<]+)<\/td>/)
+      ?.[1];
+    assert(fetchedAt, "preview shows fetchedAt");
+
+    await new Promise((r) => setTimeout(r, 5));
+    const body = new URLSearchParams({ url: share });
+    const res = await router.fetch(
+      new Request("http://og.test/preview/purge", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body,
+      }),
+    );
+    assertEquals(res.status, 303);
+    const location = res.headers.get("location")!;
+    assertStringIncludes(location, "/preview?url=");
+    assertStringIncludes(location, "purged=1");
+
+    const after = await router.fetch(new Request(location));
+    const html2 = await after.text();
+    assertStringIncludes(html2, "キャッシュを消して取り直しました");
+    const fetchedAt2 = html2.match(/<th>取得時刻<\/th>\s*<td>([^<]+)<\/td>/)
+      ?.[1];
+    assert(
+      fetchedAt2 && fetchedAt2 !== fetchedAt,
+      `expected a fresh fetch, got ${fetchedAt2}`,
+    );
+  }),
+);

@@ -14,6 +14,7 @@ export interface KvEntry<M> {
 export interface TemplateKv<M = Record<string, unknown>> {
   get(key: string): Promise<KvEntry<M> | null>;
   put(key: string, value: Uint8Array, metadata: M): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
 export class MemoryTemplateKv<M = Record<string, unknown>>
@@ -24,6 +25,10 @@ export class MemoryTemplateKv<M = Record<string, unknown>>
   }
   put(key: string, value: Uint8Array, metadata: M): Promise<void> {
     this.#map.set(key, { value, metadata });
+    return Promise.resolve();
+  }
+  delete(key: string): Promise<void> {
+    this.#map.delete(key);
     return Promise.resolve();
   }
 }
@@ -38,5 +43,8 @@ export class CloudflareTemplateKv<M = Record<string, unknown>>
   }
   async put(key: string, value: Uint8Array, metadata: M): Promise<void> {
     await this.ns.put(key, value as Uint8Array<ArrayBuffer>, { metadata });
+  }
+  async delete(key: string): Promise<void> {
+    await this.ns.delete(key);
   }
 }

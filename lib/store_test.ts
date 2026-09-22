@@ -125,6 +125,23 @@ Deno.test("TemplateStore errors", async () => {
   Deno.env.delete("ALLOWED_HOSTS");
 });
 
+Deno.test("TemplateStore.purge drops memory and KV so the next get refetches unconditionally", async () => {
+  Deno.env.set("ALLOWED_HOSTS", "*.kbn.one");
+  const origin = fakeOrigin();
+  const kv = new MemoryTemplateKv<StoredMeta>();
+  const store = new TemplateStore({ kv, fetch: origin.fetchFn });
+  await store.get("g.kbn.one/og.svg");
+  assertEquals(origin.log.length, 1);
+  await store.get("g.kbn.one/og.svg");
+  assertEquals(origin.log.length, 1, "fresh: cached");
+  await store.purge("g.kbn.one/og.svg");
+  assertEquals(await kv.get("g.kbn.one/og.svg"), null);
+  await store.get("g.kbn.one/og.svg");
+  assertEquals(origin.log.length, 2, "purged: refetched");
+  assertEquals(origin.log[1].inm, null, "unconditional GET after purge");
+  Deno.env.delete("ALLOWED_HOSTS");
+});
+
 Deno.test("TemplateStore serves stale and revalidates in background with waitUntil", async () => {
   Deno.env.set("ALLOWED_HOSTS", "*.kbn.one");
   const origin = fakeOrigin();

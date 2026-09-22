@@ -9,7 +9,7 @@ import { routes } from "./routes.ts";
 import { homeAction } from "./controllers/home.ts";
 import { shareAction } from "./controllers/share.ts";
 import { imgAction } from "./controllers/img.ts";
-import { previewAction } from "./controllers/preview.ts";
+import { previewAction, previewPurgeAction } from "./controllers/preview.ts";
 
 const router = createRouter();
 
@@ -17,5 +17,6 @@ router.get(routes.home, homeAction);
 router.get(routes.share, shareAction);
 router.get(routes.img, imgAction);
 router.get(routes.preview, previewAction);
+router.post(routes.previewPurge, previewPurgeAction);
 
 export default router;
