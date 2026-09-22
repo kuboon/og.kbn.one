@@ -1,12 +1,33 @@
 {
+  "tasks": {
+    "dev": "deno serve -P --watch ./router.ts",
+    "start": "deno run -P ./main.ts",
+    "test": "deno test -P",
+    "check": "deno check && deno lint && deno fmt --check"
+  },
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "@hono/hono/jsx"
+    "lib": ["deno.ns", "deno.unstable", "dom"],
+    "strict": true
   },
   "imports": {
-    "@hono/hono": "jsr:@hono/hono@^4.6.13",
-    "@std/encoding": "jsr:@std/encoding@^1.0.5"
+    "@std/assert": "jsr:@std/assert@^1.0.19",
+    "@resvg/resvg-wasm": "npm:@resvg/resvg-wasm@2.6.2",
+    "@remix-run/fetch-router": "npm:@remix-run/fetch-router@0.21.0",
+    "@remix-run/html-template": "npm:@remix-run/html-template@0.3.1",
+    "@remix-run/response": "npm:@remix-run/response@0.3.8"
   },
+  "permissions": {
+    "default": {
+      "env": ["ALLOWED_HOSTS", "DENO_DEPLOYMENT_ID", "KV_PATH", "PORT"],
+      "net": true,
+      "read": true
+    }
+  },
+  "test": {
+    "permissions": "default"
+  },
+  "unstable": ["kv"],
+  "nodeModulesDir": "auto",
   "deploy": {
     "org": "kuboon-tokyo",
     "app": "ogp"
