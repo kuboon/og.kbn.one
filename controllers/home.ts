@@ -55,6 +55,16 @@ share.searchParams.set("tmpl", "tetra-do.kbn.one/og.json");
 share.searchParams.set("score", String(score));
 navigator.share?.({ url: share.href }) ?? navigator.clipboard.writeText(share.href);`;
 
+const SHARE_ELEMENT_EXAMPLE =
+  `<!-- バンドラ無しなら esm.sh 経由で読み込める（Deno なら deno add jsr:@kuboon/share-element） -->
+<script type="module" src="https://esm.sh/jsr/@kuboon/share-element"></script>
+
+<share-buttons id="share"></share-buttons>
+<script type="module">
+  // 上で組み立てた share (URL) を渡す
+  document.getElementById("share").url = share.href;
+</script>`;
+
 export const homeAction = {
   handler() {
     const body = html`
@@ -90,6 +100,11 @@ export const homeAction = {
       </table>
       <p>ゲーム側の実装例:</p>
       <pre><code>${CLIENT_EXAMPLE}</code></pre>
+      <p>シェア UI は <a href="https://jsr.io/@kuboon/share-element">@kuboon/share-element</a> の
+      <code>&lt;share-buttons&gt;</code> を使うのを推奨します（必須ではありません）。
+      X、LINE、Threads のボタンと、端末が対応していればネイティブの共有シート、無ければクリップボードへのコピーをまとめて出してくれます。
+      <code>url</code> 属性に上で組み立てたシェア URL を渡すだけです。</p>
+      <pre><code>${SHARE_ELEMENT_EXAMPLE}</code></pre>
       <p>操作ログのような長い値も、通常のクエリ値として 1 回だけエンコードすれば済みます。
             <code>/share</code> は受け取った値をデコードし、<code>url</code> パターンに埋めるときに 1 回エンコードし直すので、
             ゲームが <code>URLSearchParams</code> で読めば元の値がそのまま戻ります。</p>
