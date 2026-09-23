@@ -72,6 +72,9 @@ export const homeAction = {
       <p>テンプレ駆動の og:image 生成サービス。テンプレ（SVG）は各プロジェクトが静的ファイルとして持ち、
             このサーバはクエリの値を埋めて PNG を描画します。サーバを持たないクライアントだけのゲームでも、
             静的ホスティングにテンプレを 1 ファイル置けば使えます。</p>
+      <p
+        class="warn"><strong>注意:</strong> 本インスタンスは <code>*.kbn.one</code> 専用です。
+      ご自身のドメインで利用したい方は <a href="https://github.com/kuboon/og.kbn.one">kuboon/og.kbn.one</a> から Fork してどうぞ（要 Cloudflare Workers かそれに準ずるもの）。</p>
 
       <h2>仕組み</h2>
       <ol>
