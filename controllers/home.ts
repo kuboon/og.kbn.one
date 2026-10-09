@@ -204,7 +204,8 @@ export const homeAction = {
         )}</p>
 
       <h2>プレビュー</h2>
-      <p><a href="/preview">/preview</a> にシェア URL を貼ると、各画像に値を埋めた状態、クローラごとにどの画像が選ばれるか、OG メタ、遷移先を確認できます。</p>
+      <p><a href="/preview">/preview</a> にシェア URL を貼ると、各画像に値を埋めた状態、クローラごとにどの画像が選ばれるか、OG メタ、遷移先を確認できます。
+      ゲームのページ URL を貼った場合は、その HTML の <code>og:image</code> が <code>https://og.kbn.one/img?tmpl=…</code> ならそこからテンプレと変数を読み取ります。テンプレの URL を直接貼るとデフォルト値で表示します。</p>
 
       <h2>エンドポイント</h2>
       <table>

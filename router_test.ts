@@ -265,16 +265,68 @@ Deno.test(
     assertStringIncludes(html, "テンプレ URL として表示しています");
     assertStringIncludes(html, "画像 (2)");
 
-    // ホワイトリスト内だがテンプレではないページ
+    // ホワイトリスト内だが存在しないページ
     const page = await router.fetch(
       new Request(
         `http://og.test/preview?url=${encodeURIComponent(`http://${base}/nf`)}`,
       ),
     );
     assertEquals(page.status, 200);
-    assertStringIncludes(
-      await page.text(),
-      "テンプレ URL として読もうとして失敗しました",
-    );
+    assertStringIncludes(await page.text(), "取得できませんでした");
+  }),
+);
+
+Deno.test(
+  "GET /preview reads og:image from a game page",
+  withOrigin(async (base) => {
+    // withOrigin のサーバは /og.svg と /og.json しか返さないので、ページは別サーバで出す
+    const pageServer = Deno.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      onListen() {},
+    }, (req) => {
+      const path = new URL(req.url).pathname;
+      if (path === "/game") {
+        return new Response(
+          `<!doctype html><html><head><meta property="og:title" content="game"><meta property="og:image" content="https://og.test/img?tmpl=${base}/og.json&amp;score=7"></head></html>`,
+          { headers: { "content-type": "text/html; charset=utf-8" } },
+        );
+      }
+      if (path === "/static") {
+        return new Response(
+          `<!doctype html><html><head><meta property="og:image" content="https://example.com/x.png"></head></html>`,
+          { headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("nf", { status: 404 });
+    });
+    try {
+      const pageBase = `http://127.0.0.1:${pageServer.addr.port}`;
+      const res = await router.fetch(
+        new Request(
+          `http://og.test/preview?url=${
+            encodeURIComponent(`${pageBase}/game`)
+          }`,
+        ),
+      );
+      assertEquals(res.status, 200);
+      const html = await res.text();
+      assertStringIncludes(html, "から読み取りました");
+      assertStringIncludes(html, "画像 (2)");
+      assertStringIncludes(html, "<text>7</text>");
+
+      const res2 = await router.fetch(
+        new Request(
+          `http://og.test/preview?url=${
+            encodeURIComponent(`${pageBase}/static`)
+          }`,
+        ),
+      );
+      const html2 = await res2.text();
+      assertStringIncludes(html2, "og.kbn.one の画像 URL");
+      assertStringIncludes(html2, "https://example.com/x.png");
+    } finally {
+      await pageServer.shutdown();
+    }
   }),
 );
