@@ -238,3 +238,43 @@ Deno.test(
     );
   }),
 );
+
+Deno.test(
+  "GET /preview explains when the pasted URL is not a share URL",
+  withOrigin(async (base) => {
+    const notShare = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${
+          encodeURIComponent("https://example.com/tetra-do")
+        }`,
+      ),
+    );
+    assertEquals(notShare.status, 200);
+    assertStringIncludes(await notShare.text(), "シェア URL ではありません");
+
+    // ホワイトリスト内のテンプレ URL はデフォルト値で表示する
+    const tplUrl = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${
+          encodeURIComponent(`http://${base}/og.json`)
+        }`,
+      ),
+    );
+    assertEquals(tplUrl.status, 200);
+    const html = await tplUrl.text();
+    assertStringIncludes(html, "テンプレ URL として表示しています");
+    assertStringIncludes(html, "画像 (2)");
+
+    // ホワイトリスト内だがテンプレではないページ
+    const page = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${encodeURIComponent(`http://${base}/nf`)}`,
+      ),
+    );
+    assertEquals(page.status, 200);
+    assertStringIncludes(
+      await page.text(),
+      "テンプレ URL として読もうとして失敗しました",
+    );
+  }),
+);

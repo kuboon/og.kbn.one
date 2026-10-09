@@ -20,6 +20,7 @@ import {
   pickImage,
   twitterCard,
 } from "../lib/share.ts";
+import { isAllowedHost } from "../lib/allowlist.ts";
 import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
 
@@ -35,12 +36,10 @@ export const previewPurgeAction = {
     const pasted = String(form.get("url") ?? "");
     const back = new URL("/preview", context.url.origin);
     if (pasted) back.searchParams.set("url", pasted);
-    let tmpl: string | null = null;
-    try {
-      tmpl = parseShareParams(new URL(pasted).searchParams)?.tmpl ?? null;
-    } catch {
-      // URL でなければ purge せずに戻す
-    }
+    const target = interpretPasted(pasted);
+    const tmpl = "search" in target
+      ? parseShareParams(target.search)?.tmpl ?? null
+      : null;
     if (tmpl) {
       try {
         await getTemplateStore().purge(tmpl);
@@ -72,20 +71,25 @@ export const previewAction = {
         own.get("purge_error") ?? ""
       }</p>`
       : html``;
+    let templateMode = false;
     if (pasted) {
-      try {
-        search = new URL(pasted).searchParams;
-      } catch {
-        return layout(
-          "preview",
-          form(pasted, html`<p class="warn">URL として解釈できません。</p>`),
-        );
+      const target = interpretPasted(pasted);
+      if ("error" in target) {
+        return layout("preview", form(pasted, html`${notice}${target.error}`));
       }
+      search = target.search;
+      templateMode = target.templateMode;
     }
     const params = parseShareParams(search);
     if (!params) {
       return layout("preview", form(pasted ?? "", notice));
     }
+    const modeNote = templateMode
+      ? html`
+        <p
+          class="muted">テンプレ URL として表示しています（変数はデフォルト値）。ゲームが生成するシェア URL（<code>/share?tmpl=…&amp;score=…</code>）を貼ると、実際の値で確認できます。</p>
+      `
+      : html``;
     const shareUrl = new URL("/share", context.url.origin);
     for (const [k, v] of search) shareUrl.searchParams.append(k, v);
 
@@ -123,7 +127,7 @@ export const previewAction = {
       });
 
       const body = html`
-        ${form(pasted ?? shareUrl.href, notice)}
+        ${form(pasted ?? shareUrl.href, html`${notice}${modeNote}`)}
         ${fontLinks}
         <h2>テンプレ</h2>
         <table>
@@ -239,17 +243,55 @@ export const previewAction = {
       return layout("preview", body);
     } catch (e) {
       if (e instanceof Error) {
+        const hint = templateMode
+          ? html`
+            <p
+              class="warn">テンプレ URL として読もうとして失敗しました。これがゲームのページ URL なら、代わりにゲームが生成するシェア URL（<code>/share?tmpl=…</code>）を貼ってください。</p>
+          `
+          : html``;
         return layout(
           "preview",
           html`${
             form(pasted ?? shareUrl.href, html``)
-          }<p class="warn">${e.message}</p>`,
+          }<p class="warn">${e.message}</p>${hint}`,
         );
       }
       return errorResponse(e);
     }
   },
 } satisfies Action<typeof routes.preview>;
+
+/**
+ * 貼られた URL の解釈。
+ *
+ * - `tmpl` を含む（シェア URL）→ そのクエリをそのまま使う。
+ * - ホワイトリスト内のホストで `tmpl` が無い → テンプレ URL とみなし、
+ *   デフォルト値で表示する。
+ * - それ以外 → エラー。
+ */
+function interpretPasted(
+  pasted: string,
+): { search: URLSearchParams; templateMode: boolean } | { error: SafeHtml } {
+  let url: URL;
+  try {
+    url = new URL(pasted.trim());
+  } catch {
+    return { error: html`<p class="warn">URL として解釈できません。</p>` };
+  }
+  if (url.searchParams.has("tmpl")) {
+    return { search: url.searchParams, templateMode: false };
+  }
+  if (isAllowedHost(url.hostname)) {
+    const tmpl = url.host + url.pathname + url.search;
+    return { search: new URLSearchParams({ tmpl }), templateMode: true };
+  }
+  return {
+    error: html`
+      <p
+        class="warn">シェア URL ではありません。ゲームが生成するシェア URL（<code>https://og.kbn.one/share?tmpl=…&amp;score=…</code>）か、テンプレの URL を貼ってください。</p>
+    `,
+  };
+}
 
 function form(value: string, note: SafeHtml): SafeHtml {
   return html`
