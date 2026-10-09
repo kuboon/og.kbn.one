@@ -20,6 +20,8 @@ import {
   pickImage,
   twitterCard,
 } from "../lib/share.ts";
+import { isAllowedHost } from "../lib/allowlist.ts";
+import { discoverPage } from "../lib/discover.ts";
 import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
 
@@ -35,12 +37,10 @@ export const previewPurgeAction = {
     const pasted = String(form.get("url") ?? "");
     const back = new URL("/preview", context.url.origin);
     if (pasted) back.searchParams.set("url", pasted);
-    let tmpl: string | null = null;
-    try {
-      tmpl = parseShareParams(new URL(pasted).searchParams)?.tmpl ?? null;
-    } catch {
-      // URL でなければ purge せずに戻す
-    }
+    const target = await interpretPasted(pasted);
+    const tmpl = "search" in target
+      ? parseShareParams(target.search)?.tmpl ?? null
+      : null;
     if (tmpl) {
       try {
         await getTemplateStore().purge(tmpl);
@@ -72,20 +72,27 @@ export const previewAction = {
         own.get("purge_error") ?? ""
       }</p>`
       : html``;
+    let templateMode = false;
+    let sourceNote: SafeHtml = html``;
     if (pasted) {
-      try {
-        search = new URL(pasted).searchParams;
-      } catch {
-        return layout(
-          "preview",
-          form(pasted, html`<p class="warn">URL として解釈できません。</p>`),
-        );
+      const target = await interpretPasted(pasted);
+      if ("error" in target) {
+        return layout("preview", form(pasted, html`${notice}${target.error}`));
       }
+      search = target.search;
+      templateMode = target.templateMode;
+      sourceNote = target.note ?? html``;
     }
     const params = parseShareParams(search);
     if (!params) {
       return layout("preview", form(pasted ?? "", notice));
     }
+    const modeNote = templateMode
+      ? html`
+        <p
+          class="muted">テンプレ URL として表示しています（変数はデフォルト値）。ゲームが生成するシェア URL（<code>/share?tmpl=…&amp;score=…</code>）を貼ると、実際の値で確認できます。</p>
+      `
+      : html``;
     const shareUrl = new URL("/share", context.url.origin);
     for (const [k, v] of search) shareUrl.searchParams.append(k, v);
 
@@ -123,7 +130,10 @@ export const previewAction = {
       });
 
       const body = html`
-        ${form(pasted ?? shareUrl.href, notice)}
+        ${form(
+          pasted ?? shareUrl.href,
+          html`${notice}${sourceNote}${modeNote}`,
+        )}
         ${fontLinks}
         <h2>テンプレ</h2>
         <table>
@@ -239,17 +249,109 @@ export const previewAction = {
       return layout("preview", body);
     } catch (e) {
       if (e instanceof Error) {
+        const hint = templateMode
+          ? html`
+            <p
+              class="warn">テンプレ URL として読もうとして失敗しました。これがゲームのページ URL なら、代わりにゲームが生成するシェア URL（<code>/share?tmpl=…</code>）を貼ってください。</p>
+          `
+          : html``;
         return layout(
           "preview",
           html`${
             form(pasted ?? shareUrl.href, html``)
-          }<p class="warn">${e.message}</p>`,
+          }<p class="warn">${e.message}</p>${hint}`,
         );
       }
       return errorResponse(e);
     }
   },
 } satisfies Action<typeof routes.preview>;
+
+/**
+ * 貼られた URL の解釈。
+ *
+ * - `tmpl` を含む（シェア URL）→ そのクエリをそのまま使う。
+ * - ホワイトリスト内のホストで `tmpl` が無い → 取得してみる。
+ *   - HTML なら OG メタを読み、og:image が og.kbn.one の `/img` か `/share`
+ *     ならそのクエリを使う（ゲームのページ URL を貼った場合）。
+ *   - HTML でなければテンプレ URL とみなし、デフォルト値で表示する。
+ * - それ以外 → エラー。
+ */
+async function interpretPasted(
+  pasted: string,
+): Promise<
+  | { search: URLSearchParams; templateMode: boolean; note?: SafeHtml }
+  | { error: SafeHtml }
+> {
+  let url: URL;
+  try {
+    url = new URL(pasted.trim());
+  } catch {
+    return { error: html`<p class="warn">URL として解釈できません。</p>` };
+  }
+  if (url.searchParams.has("tmpl")) {
+    return { search: url.searchParams, templateMode: false };
+  }
+  if (!isAllowedHost(url.hostname)) {
+    return {
+      error: html`
+        <p
+          class="warn">シェア URL ではありません。ゲームが生成するシェア URL（<code>https://og.kbn.one/share?tmpl=…&amp;score=…</code>）、ゲームのページ URL（<code>*.kbn.one</code>）、テンプレの URL のいずれかを貼ってください。</p>
+      `,
+    };
+  }
+  let found;
+  try {
+    found = await discoverPage(url);
+  } catch (e) {
+    return {
+      error: html`<p class="warn">取得できませんでした: ${
+        (e as Error).message
+      }</p>`,
+    };
+  }
+  if (found.kind === "other") {
+    const tmpl = url.host + url.pathname + url.search;
+    return { search: new URLSearchParams({ tmpl }), templateMode: true };
+  }
+  const { page } = found;
+  if (page.ogImageParams) {
+    return {
+      search: page.ogImageParams,
+      templateMode: false,
+      note: html`
+        <p
+          class="muted">ページ <a href="${url.href}">${url
+            .href}</a> の <code>og:image</code>（<code>${page.ogImage ??
+            ""}</code>）から読み取りました。</p>
+      `,
+    };
+  }
+  const rows = Object.entries(page.meta).filter(([k]) =>
+    k.startsWith("og:") || k.startsWith("twitter:")
+  );
+  return {
+    error: html`
+      <p
+        class="warn">ページを読みましたが、<code>og:image</code> が og.kbn.one の画像 URL（<code>/img?tmpl=…</code>）ではありません${page
+            .ogImage
+          ? html`: <code>${page.ogImage}</code>`
+          : html`（og:image がありません）`}。ゲーム側の <code>og:image</code> を <code>https://og.kbn.one/img?tmpl=…</code> にするか、シェア URL を貼ってください。</p>
+      ${rows.length
+        ? html`<table>${
+          rows.map(([k, v]) =>
+            html`
+              <tr>
+                <th>${k}</th>
+                <td>${v}</td>
+              </tr>
+            `
+          )
+        }</table>`
+        : html``}
+    `,
+  };
+}
 
 function form(value: string, note: SafeHtml): SafeHtml {
   return html`
