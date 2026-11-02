@@ -143,6 +143,13 @@ export const homeAction = {
           <td><code>title</code>、<code>description</code>、<code>site_name</code>、<code>type</code>。値の中で <code>{{name}}</code> が使える。</td>
         </tr>
         <tr>
+          <th><code>player</code></th>
+          <td>X の Player Card 用。<code>{ "url": "https://同じホスト/player?date={{date}}", "width": 480, "height": 480 }</code>。
+          指定すると <code>twitter:card=player</code> と <code>twitter:player*</code> を出し、<code>twitter:image</code> は正方形の画像から選ぶ。
+          <code>url</code> は https で、テンプレと同じホストのものだけ有効（<code>{{name}}</code> は URL エンコードして置換）。
+          プレイヤー側の作り方は <code>x-player-card</code> スキルを参照。</td>
+        </tr>
+        <tr>
           <th><code>images</code> / <code>image</code></th>
           <td>JSON 形式のときの SVG 文字列（配列または単体）。</td>
         </tr>

@@ -18,6 +18,16 @@ function withOrigin(fn: (base: string) => Promise<void>) {
             headers: { "content-type": "image/svg+xml", etag: `"w1"` },
           });
         }
+        if (path === "/player.json" || path === "/player-other.json") {
+          const host = path === "/player.json"
+            ? req.headers.get("host")
+            : "elsewhere.example";
+          return Response.json({
+            vars: { score: "0" },
+            player: { url: `https://${host}/p?d={{date}}` },
+            images: [WIDE, SQUARE],
+          });
+        }
         if (path === "/og.json") {
           return Response.json({
             vars: { score: "0" },
@@ -328,5 +338,56 @@ Deno.test(
     } finally {
       await pageServer.shutdown();
     }
+  }),
+);
+
+Deno.test(
+  "GET /share offers a Player Card with a square image to Twitterbot",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/share?tmpl=${base}/player.json&score=3&date=2026-09-22`,
+        { headers: { "user-agent": "Twitterbot/1.0" } },
+      ),
+    );
+    const html = await res.text();
+    assertStringIncludes(html, `name="twitter:card" content="player"`);
+    assertStringIncludes(
+      html,
+      `name="twitter:player" content="https://${base}/p?d=2026-09-22"`,
+    );
+    assertStringIncludes(html, `name="twitter:player:width" content="480"`);
+    // The card's picture is the square one; og:image keeps the crawler's own choice.
+    assertStringIncludes(
+      html,
+      `name="twitter:image" content="http://og.test/img?tmpl=${
+        encodeURIComponent(`${base}/player.json`).replaceAll("%2F", "%2F")
+      }&amp;ar=1&amp;`,
+    );
+    assertStringIncludes(
+      html,
+      `property="og:image" content="http://og.test/img?`,
+    );
+    assertStringIncludes(html, `&amp;ar=2&amp;`);
+  }),
+);
+
+Deno.test(
+  "GET /share ignores a player on another host",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/share?tmpl=${base}/player-other.json&score=3`,
+        {
+          headers: { "user-agent": "Twitterbot/1.0" },
+        },
+      ),
+    );
+    const html = await res.text();
+    assertStringIncludes(
+      html,
+      `name="twitter:card" content="summary_large_image"`,
+    );
+    assert(!html.includes("twitter:player"));
   }),
 );

@@ -15,6 +15,7 @@ import {
   buildDestination,
   buildImgUrl,
   buildOgFields,
+  buildPlayer,
   parseShareParams,
   pickImage,
   twitterCard,
@@ -61,13 +62,33 @@ export const shareAction = {
         ["og:image:width", String(image.width)],
         ["og:image:height", String(image.height)],
       ];
+      // Player Card: X が iframe で開くページ。カードの画像は正方形（それより横長だと
+      // プレイヤーが出ない）で、og:image は UA ごとの選択のまま。
+      const player = buildPlayer(template, params.vars, params.tmpl);
+      const square = player ? pickImage(template, 1) : image;
+      const twitterImg = player
+        ? buildImgUrl(
+          context.url.origin,
+          params.tmpl,
+          template,
+          params.vars,
+          square.ratio,
+        )
+        : imgUrl;
       const twitter: [string, string][] = [
-        ["twitter:card", twitterCard(image)],
+        ["twitter:card", twitterCard(image, player)],
         ["twitter:title", title],
         ...(og.description
           ? [["twitter:description", og.description] as [string, string]]
           : []),
-        ["twitter:image", imgUrl.href],
+        ["twitter:image", twitterImg.href],
+        ...(player
+          ? [
+            ["twitter:player", player.url],
+            ["twitter:player:width", String(player.width)],
+            ["twitter:player:height", String(player.height)],
+          ] as [string, string][]
+          : []),
       ];
 
       const page = html`
