@@ -277,7 +277,7 @@ export const previewAction = {
  *   - HTML でなければテンプレ URL とみなし、デフォルト値で表示する。
  * - それ以外 → エラー。
  */
-async function interpretPasted(
+export async function interpretPasted(
   pasted: string,
 ): Promise<
   | { search: URLSearchParams; templateMode: boolean; note?: SafeHtml }

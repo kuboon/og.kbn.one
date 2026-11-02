@@ -391,3 +391,67 @@ Deno.test(
     assert(!html.includes("twitter:player"));
   }),
 );
+
+Deno.test(
+  "GET /player explains a template without a player",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/player?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/og.json&score=1`,
+          )
+        }`,
+      ),
+    );
+    assertEquals(res.status, 200);
+    assertStringIncludes(await res.text(), "このテンプレには");
+  }),
+);
+
+Deno.test(
+  "GET /player shows the frame and checks for a player template",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/player?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/player.json&score=1&date=2026-09-22`,
+          )
+        }`,
+      ),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    assertStringIncludes(
+      html,
+      `sandbox="allow-popups allow-same-origin allow-scripts allow-presentation"`,
+    );
+    assertStringIncludes(html, `src="https://${base}/p?d=2026-09-22"`);
+    assertStringIncludes(html, "twitter:card = player");
+    // The test host is plain http, so the https page behind twitter:player cannot be fetched.
+    assertStringIncludes(html, "プレイヤーのページを取得できなかった");
+  }),
+);
+
+Deno.test(
+  "GET /player says why a player on another host is ignored",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/player?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/player-other.json&score=1`,
+          )
+        }`,
+      ),
+    );
+    assertStringIncludes(await res.text(), "使われません");
+  }),
+);
+
+Deno.test("GET /player without a url shows the form", async () => {
+  const res = await router.fetch(new Request("http://og.test/player"));
+  assertEquals(res.status, 200);
+  assertStringIncludes(await res.text(), 'name="url"');
+});
