@@ -4,6 +4,7 @@ import {
   buildDestination,
   buildImgUrl,
   buildOgFields,
+  buildPlayer,
   imageVars,
   parseShareParams,
   twitterCard,
@@ -75,4 +76,32 @@ Deno.test("twitterCard", () => {
   assertEquals(twitterCard({ ratio: 1 } as never), "summary");
   assertEquals(twitterCard({ ratio: 1.2 } as never), "summary");
   assertEquals(twitterCard({ ratio: 1.91 } as never), "summary_large_image");
+});
+
+const withPlayer = parseTemplate(JSON.stringify({
+  vars: { score: "0" },
+  player: { url: "https://g.kbn.one/player?date={{date}}&rec={{rec}}" },
+  images: [`<svg width="1200" height="1200"><text>{{score}}</text></svg>`],
+}));
+
+Deno.test("buildPlayer fills the url and defaults the size", () => {
+  const p = buildPlayer(
+    withPlayer,
+    { date: "2026-09-22", rec: "a b" },
+    "g.kbn.one/og.json",
+  )!;
+  assertEquals(p.url, "https://g.kbn.one/player?date=2026-09-22&rec=a%20b");
+  assertEquals([p.width, p.height], [480, 480]);
+  assertEquals(twitterCard({ ratio: 1.9 } as never, p), "player");
+  assertEquals(twitterCard({ ratio: 1 } as never, null), "summary");
+});
+
+Deno.test("buildPlayer refuses another host and non-https", () => {
+  assertEquals(buildPlayer(withPlayer, {}, "other.kbn.one/og.json"), null);
+  const http = parseTemplate(JSON.stringify({
+    player: { url: "http://g.kbn.one/p" },
+    images: [`<svg width="10" height="10"/>`],
+  }));
+  assertEquals(buildPlayer(http, {}, "g.kbn.one/og.json"), null);
+  assertEquals(buildPlayer(tpl, {}, "g.kbn.one/og.json"), null);
 });

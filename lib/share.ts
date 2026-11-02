@@ -7,7 +7,7 @@
  * - それ以外はすべて変数。画像用（テンプレの `vars`）は `/img` に渡し、
  *   全部を遷移先 `url` と `og` の `{{name}}` 置換に使う。
  */
-import type { Template, TemplateImage } from "./template.ts";
+import type { Template, TemplateImage, TemplatePlayer } from "./template.ts";
 import { formatRatio, selectImage } from "./aspect.ts";
 import { substitute } from "./render.ts";
 
@@ -81,13 +81,41 @@ export function buildOgFields(
   return out;
 }
 
+/**
+ * Player Card に出すページを組み立てる。
+ *
+ * テンプレの `player.url` に変数を埋める。https で、テンプレと同じホストのものだけを採用する
+ * （テンプレの持ち主が自分のサイトのページを iframe に出すための機能で、他所のページを
+ * og.kbn.one のカードから埋め込ませないため）。
+ */
+export function buildPlayer(
+  template: Template,
+  vars: Record<string, string>,
+  tmpl: string,
+): TemplatePlayer | null {
+  if (!template.player) return null;
+  const merged = { ...template.vars, ...vars };
+  const filled = substitute(template.player.url, merged, encodeURIComponent);
+  let url: URL;
+  try {
+    url = new URL(filled);
+  } catch {
+    return null;
+  }
+  const host = tmpl.split("/")[0].toLowerCase();
+  if (url.protocol !== "https:" || url.host.toLowerCase() !== host) return null;
+  return { ...template.player, url: url.href };
+}
+
 export function pickImage(template: Template, ratio: number): TemplateImage {
   return selectImage(template.images, ratio);
 }
 
 export function twitterCard(
   image: TemplateImage,
-): "summary" | "summary_large_image" {
+  player?: TemplatePlayer | null,
+): "summary" | "summary_large_image" | "player" {
+  if (player) return "player";
   return Math.abs(Math.log(image.ratio)) < Math.log(1.3)
     ? "summary"
     : "summary_large_image";

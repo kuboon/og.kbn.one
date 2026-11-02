@@ -26,12 +26,28 @@ export interface TemplateConfig {
   url?: string;
   /** og:title などのパターン。 */
   og?: Record<string, string>;
+  /**
+   * X の Player Card（`twitter:card=player`）で iframe に出すページ。
+   * `url` は `{{name}}` を含められる（URL エンコード済みで置換）。
+   */
+  player?: { url?: string; width?: number; height?: number };
 }
+
+/** 正規化後の Player Card 設定。 */
+export interface TemplatePlayer {
+  url: string;
+  width: number;
+  height: number;
+}
+
+/** X の Player Card で確実に動く大きさ。 */
+export const DEFAULT_PLAYER_SIZE = 480;
 
 export interface Template extends TemplateConfig {
   vars: Record<string, string>;
   fonts: string[];
   og: Record<string, string>;
+  player?: TemplatePlayer;
   images: TemplateImage[];
 }
 
@@ -185,6 +201,20 @@ function normalize(cfg: TemplateConfig, images: TemplateImage[]): Template {
     fonts,
     url: typeof cfg.url === "string" ? cfg.url : undefined,
     og,
+    player: normalizePlayer(cfg.player),
     images,
   };
+}
+
+function normalizePlayer(
+  raw: TemplateConfig["player"],
+): TemplatePlayer | undefined {
+  if (!raw || typeof raw !== "object" || typeof raw.url !== "string") {
+    return undefined;
+  }
+  const size = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) && v > 0
+      ? Math.round(v)
+      : DEFAULT_PLAYER_SIZE;
+  return { url: raw.url, width: size(raw.width), height: size(raw.height) };
 }
