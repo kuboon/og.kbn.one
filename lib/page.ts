@@ -37,7 +37,7 @@ export function layout(title: string, body: SafeHtml): Response {
         <style>${html.raw`${STYLE}`}</style>
       </head>
       <body>
-    <header><nav><a href="/">og.kbn.one</a><a href="/preview">preview</a><a href="/player">player</a></nav></header>
+    <header><nav><a href="/">og.kbn.one</a><a href="/preview">preview</a></nav></header>
     ${body}
       </body>
     </html>

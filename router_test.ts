@@ -393,11 +393,11 @@ Deno.test(
 );
 
 Deno.test(
-  "GET /player explains a template without a player",
+  "GET /preview says when the template has no player",
   withOrigin(async (base) => {
     const res = await router.fetch(
       new Request(
-        `http://og.test/player?url=${
+        `http://og.test/preview?url=${
           encodeURIComponent(
             `http://og.test/share?tmpl=${base}/og.json&score=1`,
           )
@@ -405,16 +405,18 @@ Deno.test(
       ),
     );
     assertEquals(res.status, 200);
-    assertStringIncludes(await res.text(), "このテンプレには");
+    const html = await res.text();
+    assertStringIncludes(html, `id="player"`);
+    assertStringIncludes(html, "このテンプレには");
   }),
 );
 
 Deno.test(
-  "GET /player shows the frame and checks for a player template",
+  "GET /preview shows the player frame and checks for a player template",
   withOrigin(async (base) => {
     const res = await router.fetch(
       new Request(
-        `http://og.test/player?url=${
+        `http://og.test/preview?url=${
           encodeURIComponent(
             `http://og.test/share?tmpl=${base}/player.json&score=1&date=2026-09-22`,
           )
@@ -431,15 +433,17 @@ Deno.test(
     assertStringIncludes(html, "twitter:card = player");
     // The test host is plain http, so the https page behind twitter:player cannot be fetched.
     assertStringIncludes(html, "プレイヤーのページを取得できなかった");
+    // The rest of /preview is still there.
+    assertStringIncludes(html, "クローラごとの選択");
   }),
 );
 
 Deno.test(
-  "GET /player says why a player on another host is ignored",
+  "GET /preview says why a player on another host is ignored",
   withOrigin(async (base) => {
     const res = await router.fetch(
       new Request(
-        `http://og.test/player?url=${
+        `http://og.test/preview?url=${
           encodeURIComponent(
             `http://og.test/share?tmpl=${base}/player-other.json&score=1`,
           )
@@ -450,8 +454,13 @@ Deno.test(
   }),
 );
 
-Deno.test("GET /player without a url shows the form", async () => {
-  const res = await router.fetch(new Request("http://og.test/player"));
-  assertEquals(res.status, 200);
-  assertStringIncludes(await res.text(), 'name="url"');
+Deno.test("GET /player moves to the player section of /preview", async () => {
+  const res = await router.fetch(
+    new Request("http://og.test/player?url=http%3A%2F%2Fx%2Fshare%3Ftmpl%3Da"),
+  );
+  assertEquals(res.status, 303);
+  assertEquals(
+    res.headers.get("location"),
+    "http://og.test/preview?url=http%3A%2F%2Fx%2Fshare%3Ftmpl%3Da#player",
+  );
 });

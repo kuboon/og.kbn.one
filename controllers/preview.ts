@@ -24,6 +24,7 @@ import { isAllowedHost } from "../lib/allowlist.ts";
 import { discoverPage } from "../lib/discover.ts";
 import { getRequestScope } from "../lib/scope.ts";
 import { getTemplateStore } from "../lib/store.ts";
+import { playerSection } from "./player.ts";
 
 /**
  * POST /preview/purge（フォーム: url=<シェア URL>）
@@ -245,6 +246,7 @@ export const previewAction = {
           `
         )}
         </table>
+        ${await playerSection(context.url.origin, template, params)}
       `;
       return layout("preview", body);
     } catch (e) {
