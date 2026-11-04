@@ -147,7 +147,7 @@ export const homeAction = {
           <td>X の Player Card 用。<code>{ "url": "https://同じホスト/player?date={{date}}", "width": 480, "height": 480 }</code>。
           指定すると <code>twitter:card=player</code> と <code>twitter:player*</code> を出し、<code>twitter:image</code> は正方形の画像から選ぶ。
           <code>url</code> は https で、テンプレと同じホストのものだけ有効（<code>{{name}}</code> は URL エンコードして置換）。
-          プレイヤー側の作り方は <code>x-player-card</code> スキルを参照。</td>
+          プレイヤー側の作り方は <code>x-player-card</code> スキルを参照。<a href="/preview">/preview</a> の「X の Player Card」で確認できる。</td>
         </tr>
         <tr>
           <th><code>images</code> / <code>image</code></th>
@@ -226,7 +226,7 @@ export const homeAction = {
         </tr>
         <tr>
           <th><code>GET /preview</code></th>
-          <td>プレビューア。</td>
+          <td>プレビューア。画像、クローラごとの選択、OG メタに加えて、<code>player</code> があれば X の Player Card の条件確認と、プレイヤーを X と同じ sandbox の iframe で動かすシミュレータも出す。</td>
         </tr>
       </table>
     `;

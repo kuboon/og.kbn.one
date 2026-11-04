@@ -391,3 +391,76 @@ Deno.test(
     assert(!html.includes("twitter:player"));
   }),
 );
+
+Deno.test(
+  "GET /preview says when the template has no player",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/og.json&score=1`,
+          )
+        }`,
+      ),
+    );
+    assertEquals(res.status, 200);
+    const html = await res.text();
+    assertStringIncludes(html, `id="player"`);
+    assertStringIncludes(html, "このテンプレには");
+  }),
+);
+
+Deno.test(
+  "GET /preview shows the player frame and checks for a player template",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/player.json&score=1&date=2026-09-22`,
+          )
+        }`,
+      ),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    assertStringIncludes(
+      html,
+      `sandbox="allow-popups allow-same-origin allow-scripts allow-presentation"`,
+    );
+    assertStringIncludes(html, `src="https://${base}/p?d=2026-09-22"`);
+    assertStringIncludes(html, "twitter:card = player");
+    // The test host is plain http, so the https page behind twitter:player cannot be fetched.
+    assertStringIncludes(html, "プレイヤーのページを取得できなかった");
+    // The rest of /preview is still there.
+    assertStringIncludes(html, "クローラごとの選択");
+  }),
+);
+
+Deno.test(
+  "GET /preview says why a player on another host is ignored",
+  withOrigin(async (base) => {
+    const res = await router.fetch(
+      new Request(
+        `http://og.test/preview?url=${
+          encodeURIComponent(
+            `http://og.test/share?tmpl=${base}/player-other.json&score=1`,
+          )
+        }`,
+      ),
+    );
+    assertStringIncludes(await res.text(), "使われません");
+  }),
+);
+
+Deno.test("GET /player moves to the player section of /preview", async () => {
+  const res = await router.fetch(
+    new Request("http://og.test/player?url=http%3A%2F%2Fx%2Fshare%3Ftmpl%3Da"),
+  );
+  assertEquals(res.status, 303);
+  assertEquals(
+    res.headers.get("location"),
+    "http://og.test/preview?url=http%3A%2F%2Fx%2Fshare%3Ftmpl%3Da#player",
+  );
+});
